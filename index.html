@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IP CIDR → VLAN Planner</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3354;
+      --accent: #4f8ef7;
+      --accent-dim: #2a4a8c;
+      --green: #34d399;
+      --red: #f87171;
+      --yellow: #fbbf24;
+      --text: #e2e8f0;
+      --muted: #6b7280;
+      --radius: 10px;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 32px 16px;
+    }
+
+    .container { max-width: 1060px; margin: 0 auto; }
+
+    header { margin-bottom: 32px; }
+    header h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.5px; }
+    header h1 span { color: var(--accent); }
+    header p { color: var(--muted); margin-top: 6px; font-size: 0.95rem; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+    }
+
+    .field { display: flex; flex-direction: column; gap: 6px; }
+
+    .field label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .field input[type="text"] {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 7px;
+      padding: 10px 14px;
+      font-size: 0.95rem;
+      font-family: 'Consolas', 'Courier New', monospace;
+      outline: none;
+      transition: border-color 0.15s;
+      min-width: 220px;
+    }
+
+    .field input[type="text"]:focus { border-color: var(--accent); }
+    .field input[type="text"].error  { border-color: var(--red); }
+    .field input[type="text"].ok     { border-color: var(--green); }
+
+    /* File drop zone */
+    .drop-zone {
+      background: var(--bg);
+      border: 2px dashed var(--border);
+      border-radius: 7px;
+      padding: 10px 16px;
+      min-width: 260px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      height: 42px;
+      font-size: 0.88rem;
+      color: var(--muted);
+      user-select: none;
+    }
+
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: var(--accent);
+      background: var(--surface2);
+      color: var(--text);
+    }
+
+    .drop-zone.loaded {
+      border-color: var(--green);
+      border-style: solid;
+      color: var(--green);
+    }
+
+    .drop-zone .dz-icon { font-size: 1.1rem; flex-shrink: 0; }
+
+    /* Hidden real file input */
+    #file-input { display: none; }
+
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      padding: 10px 22px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      align-self: flex-end;
+      height: 42px;
+      white-space: nowrap;
+    }
+
+    button:hover  { background: #6ba3ff; }
+    button:active { transform: scale(0.97); }
+
+    .validation-msg {
+      font-size: 0.85rem;
+      margin-top: 10px;
+      min-height: 20px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .validation-msg.ok   { color: var(--green); }
+    .validation-msg.err  { color: var(--red); }
+    .validation-msg.warn { color: var(--yellow); }
+
+    /* File preview list */
+    .file-preview {
+      margin-top: 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      overflow: hidden;
+      font-size: 0.82rem;
+      font-family: 'Consolas', 'Courier New', monospace;
+    }
+
+    .file-preview-header {
+      padding: 7px 14px;
+      background: var(--surface2);
+      color: var(--muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .file-preview-body { max-height: 140px; overflow-y: auto; }
+
+    .file-row {
+      display: flex;
+      align-items: center;
+      padding: 5px 14px;
+      gap: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .file-row:first-child { border-top: none; }
+    .file-row.row-ok    { }
+    .file-row.row-warn  { background: rgba(251,191,36,0.06); }
+    .file-row.row-skip  { opacity: 0.4; }
+
+    .fr-num  { color: var(--muted); min-width: 28px; }
+    .fr-vlan { color: var(--accent); min-width: 50px; }
+    .fr-desc { color: var(--text); flex: 1; }
+    .fr-mask { color: var(--green); min-width: 40px; }
+    .fr-badge {
+      font-size: 0.7rem;
+      padding: 1px 7px;
+      border-radius: 4px;
+      background: rgba(251,191,36,0.15);
+      color: var(--yellow);
+    }
+
+    /* Summary chips */
+    .summary { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+
+    .chip {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-size: 0.85rem;
+    }
+
+    .chip .chip-label {
+      color: var(--muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 2px;
+    }
+
+    .chip .chip-value {
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    /* Table */
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+
+    thead tr { background: var(--surface2); }
+
+    thead th {
+      padding: 12px 16px;
+      text-align: left;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      border-top: 1px solid var(--border);
+      transition: background 0.1s;
+    }
+
+    tbody tr:hover { background: var(--surface2); }
+
+    tbody tr.row-warn { background: rgba(251,191,36,0.05); }
+    tbody tr.row-warn:hover { background: rgba(251,191,36,0.1); }
+
+    tbody td {
+      padding: 11px 16px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      white-space: nowrap;
+    }
+
+    td.vlan-id   { font-weight: 700; color: var(--accent); }
+    td.desc-col  { color: var(--muted); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.85rem; }
+    td.network   { color: var(--text); }
+    td.range     { color: var(--green); }
+    td.warn-cell { color: var(--yellow); }
+
+    .badge-warn {
+      display: inline-block;
+      font-size: 0.7rem;
+      padding: 1px 7px;
+      border-radius: 4px;
+      background: rgba(251,191,36,0.15);
+      color: var(--yellow);
+      margin-left: 8px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+
+    /* Table toolbar */
+    .table-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .copy-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 14px;
+      font-size: 0.82rem;
+      height: auto;
+      border-radius: 6px;
+    }
+
+    .copy-btn:hover { background: var(--border); }
+
+    /* Pagination */
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      flex-wrap: wrap;
+      gap: 8px;
+      border-top: 1px solid var(--border);
+    }
+
+    .page-btns { display: flex; gap: 6px; }
+
+    .page-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 14px;
+      font-size: 0.82rem;
+      height: auto;
+      border-radius: 6px;
+    }
+
+    .page-btn:hover    { background: var(--border); }
+    .page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .page-btn.active   { background: var(--accent-dim); border-color: var(--accent); color: #fff; }
+
+    .hidden { display: none !important; }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+    .empty-state .icon { font-size: 2.5rem; margin-bottom: 12px; }
+    .empty-state small { display: block; margin-top: 6px; font-size: 0.8rem; opacity: 0.6; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>IP CIDR → <span>VLAN Planner</span></h1>
+    <p>Enter a parent CIDR and load a <code style="font-size:0.9em;color:var(--accent)">vlan-structure.txt</code> file to allocate subnets per VLAN.</p>
+  </header>
+
+  <!-- Input card -->
+  <div class="card">
+    <div class="input-row">
+
+      <div class="field">
+        <label>Parent CIDR Block</label>
+        <input id="cidr-input" type="text" placeholder="e.g. 10.0.0.0/16" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <div class="field">
+        <label>VLAN Structure File</label>
+        <input type="file" id="file-input" accept=".txt,text/plain" />
+        <div class="drop-zone" id="drop-zone" tabindex="0" role="button"
+             aria-label="Click or drop vlan-structure.txt here">
+          <span class="dz-icon">📄</span>
+          <span id="dz-label">Click or drop vlan-structure.txt</span>
+        </div>
+      </div>
+
+      <button id="calc-btn">Generate</button>
+    </div>
+
+    <div class="validation-msg" id="val-msg"></div>
+
+    <!-- File preview -->
+    <div id="file-preview" class="file-preview hidden">
+      <div class="file-preview-header">
+        <span id="preview-title">Parsed VLANs</span>
+        <span id="preview-count"></span>
+      </div>
+      <div class="file-preview-body" id="preview-body"></div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="results" class="hidden">
+    <div class="summary" id="summary"></div>
+
+    <div class="card" style="padding:0; overflow:hidden;">
+      <div class="table-toolbar">
+        <span style="font-weight:600; font-size:0.9rem;">Allocated Subnets / VLANs</span>
+        <div style="display:flex;gap:8px;">
+          <button class="copy-btn" id="copy-btn">⎘ Copy CSV</button>
+          <button class="copy-btn" id="download-btn">⬇ Download CSV</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>VLAN ID</th>
+              <th>Description</th>
+              <th>Network (CIDR)</th>
+              <th>First Usable IP</th>
+              <th>Last Usable IP</th>
+              <th>Usable Hosts</th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+      <div class="pagination hidden" id="pagination"></div>
+    </div>
+  </div>
+
+  <div id="empty-state" class="empty-state">
+    <div class="icon">🌐</div>
+    <div>Enter a CIDR block and load your VLAN structure file to get started.</div>
+    <small>File format: vlan_id,description,prefix_length — one per line</small>
+  </div>
+
+</div>
+
+<script>
+// ─── IP helpers ───────────────────────────────────────────────
+
+function ipToInt(ip) {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return null;
+  let n = 0;
+  for (const p of parts) {
+    const v = parseInt(p, 10);
+    if (isNaN(v) || v < 0 || v > 255) return null;
+    n = (n << 8) | v;
+  }
+  return n >>> 0;
+}
+
+function intToIp(n) {
+  return [
+    (n >>> 24) & 0xff,
+    (n >>> 16) & 0xff,
+    (n >>>  8) & 0xff,
+     n         & 0xff,
+  ].join('.');
+}
+
+function maskFromPrefix(prefix) {
+  return prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+}
+
+// Parse a mask field — accepts "24", "/24", or "255.255.255.0"
+function parseMask(raw) {
+  if (!raw) return null;
+  const s = raw.trim();
+
+  // /24 or 24
+  const direct = s.replace(/^\//, '');
+  const n = parseInt(direct, 10);
+  if (!isNaN(n) && n >= 0 && n <= 32 && String(n) === direct) return n;
+
+  // dotted decimal like 255.255.255.0
+  const dotted = ipToInt(s);
+  if (dotted !== null) {
+    // Count leading 1s
+    let prefix = 0;
+    for (let i = 31; i >= 0; i--) {
+      if (dotted & (1 << i)) prefix++;
+      else break;
+    }
+    // Validate it's a valid mask (all 1s then all 0s)
+    const expected = maskFromPrefix(prefix);
+    if (expected === dotted) return prefix;
+  }
+  return null;
+}
+
+// ─── CIDR parsing & validation ───────────────────────────────
+
+function parseCidr(raw) {
+  const trimmed = raw.trim();
+  const match = trimmed.match(/^([0-9.]+)\/(\d+)$/);
+  if (!match) return { error: 'Invalid format — use x.x.x.x/prefix (e.g. 10.0.0.0/16)' };
+
+  const ip    = match[1];
+  const prefix = parseInt(match[2], 10);
+  if (prefix < 0 || prefix > 32) return { error: 'Prefix length must be between 0 and 32.' };
+
+  const ipInt = ipToInt(ip);
+  if (ipInt === null) return { error: 'IP address contains invalid octets.' };
+
+  const mask = maskFromPrefix(prefix);
+
+  // Bit-boundary check — host bits must be zero
+  const networkInt = (ipInt & mask) >>> 0;
+  if (networkInt !== ipInt) {
+    const corrected = intToIp(networkInt) + '/' + prefix;
+    return { error: `Host bits are set — not on a bit boundary. Did you mean ${corrected}?` };
+  }
+
+  return { ip, prefix, ipInt, mask, networkInt };
+}
+
+// ─── VLAN file parsing ────────────────────────────────────────
+
+// Returns array of { lineNum, vlanId, description, prefix, raw, warning }
+function parseVlanFile(text) {
+  const lines  = text.split(/\r?\n/);
+  const result = [];
+
+  lines.forEach((line, idx) => {
+    const raw = line.trim();
+    if (!raw) return; // skip blank lines
+
+    const parts = raw.split(',').map(s => s.trim());
+    const lineNum = idx + 1;
+
+    // VLAN ID
+    const vlanId = parseInt(parts[0], 10);
+    if (isNaN(vlanId) || vlanId < 1 || vlanId > 4094) {
+      result.push({ lineNum, raw, warning: `Invalid VLAN ID "${parts[0]}"`, skip: true });
+      return;
+    }
+
+    // Description
+    const description = parts[1] || '(no description)';
+
+    // Mask / prefix
+    const prefix = parseMask(parts[2]);
+    if (prefix === null) {
+      result.push({ lineNum, vlanId, description, raw, warning: `Unrecognised mask "${parts[2]}"`, skip: true });
+      return;
+    }
+
+    result.push({ lineNum, vlanId, description, prefix, raw });
+  });
+
+  return result;
+}
+
+// ─── Subnet allocation ────────────────────────────────────────
+
+function allocateSubnets(parentCidr, vlanDefs) {
+  const parentEnd = (parentCidr.networkInt + Math.pow(2, 32 - parentCidr.prefix) - 1) >>> 0;
+  let pointer = parentCidr.networkInt;
+  const rows = [];
+
+  for (const def of vlanDefs) {
+    if (def.skip) {
+      rows.push({ ...def, skipped: true });
+      continue;
+    }
+
+    const subnetSize = Math.pow(2, 32 - def.prefix) >>> 0;
+
+    // Align pointer to subnet boundary
+    if (subnetSize > 1 && (pointer % subnetSize) !== 0) {
+      pointer = (Math.ceil(pointer / subnetSize) * subnetSize) >>> 0;
+    }
+
+    const netInt       = pointer >>> 0;
+    const broadcastInt = (netInt + subnetSize - 1) >>> 0;
+
+    let warning = null;
+    if (broadcastInt > parentEnd) {
+      warning = 'Exceeds parent block';
+    }
+
+    let firstUsable, lastUsable, usableHosts;
+    if (def.prefix >= 31) {
+      firstUsable = intToIp(netInt);
+      lastUsable  = intToIp(broadcastInt);
+      usableHosts = def.prefix === 31 ? 2 : 1;
+    } else {
+      firstUsable = intToIp((netInt + 1) >>> 0);
+      lastUsable  = intToIp((broadcastInt - 1) >>> 0);
+      usableHosts = subnetSize - 2;
+    }
+
+    rows.push({
+      ...def,
+      network: intToIp(netInt) + '/' + def.prefix,
+      firstUsable,
+      lastUsable,
+      usableHosts,
+      warning,
+    });
+
+    pointer = (broadcastInt + 1) >>> 0;
+  }
+
+  return rows;
+}
+
+// ─── State ───────────────────────────────────────────────────
+
+let parsedVlans  = [];   // from file
+let allocatedRows = [];  // after generation
+let currentPage  = 0;
+const PAGE_SIZE  = 100;
+
+// ─── File drop zone ───────────────────────────────────────────
+
+const dropZone  = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+const dzLabel   = document.getElementById('dz-label');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) loadFile(file);
+});
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) loadFile(fileInput.files[0]);
+});
+
+function loadFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    parsedVlans = parseVlanFile(text);
+    renderFilePreview(file.name);
+  };
+  reader.readAsText(file);
+}
+
+function renderFilePreview(filename) {
+  const valid   = parsedVlans.filter(r => !r.skip);
+  const skipped = parsedVlans.filter(r => r.skip);
+
+  dzLabel.textContent = filename;
+  dropZone.classList.add('loaded');
+  dropZone.querySelector('.dz-icon').textContent = '✓';
+
+  document.getElementById('preview-title').textContent = `${filename} — parsed`;
+  document.getElementById('preview-count').textContent =
+    `${valid.length} valid · ${skipped.length} skipped`;
+
+  const body = document.getElementById('preview-body');
+  body.innerHTML = '';
+
+  parsedVlans.forEach(row => {
+    const div = document.createElement('div');
+    div.className = 'file-row ' + (row.skip ? 'row-skip' : row.warning ? 'row-warn' : 'row-ok');
+    div.innerHTML = `
+      <span class="fr-num">${row.lineNum}</span>
+      <span class="fr-vlan">${row.vlanId ?? '—'}</span>
+      <span class="fr-desc">${row.description ?? row.raw}</span>
+      <span class="fr-mask">${row.prefix != null ? '/' + row.prefix : '?'}</span>
+      ${row.warning ? `<span class="fr-badge">${row.warning}</span>` : ''}
+    `;
+    body.appendChild(div);
+  });
+
+  document.getElementById('file-preview').classList.remove('hidden');
+}
+
+// ─── Table rendering ─────────────────────────────────────────
+
+function getValidRows() {
+  return allocatedRows.filter(r => !r.skipped);
+}
+
+function renderTable() {
+  const tbody = document.getElementById('table-body');
+  tbody.innerHTML = '';
+
+  const valid = getValidRows();
+  const start = currentPage * PAGE_SIZE;
+  const slice = valid.slice(start, start + PAGE_SIZE);
+
+  for (const row of slice) {
+    const tr = document.createElement('tr');
+    if (row.warning) tr.classList.add('row-warn');
+
+    const networkCell = document.createElement('td');
+    networkCell.className = 'network';
+    networkCell.textContent = row.network || '';
+    if (row.warning) {
+      const badge = document.createElement('span');
+      badge.className = 'badge-warn';
+      badge.textContent = '⚠ ' + row.warning;
+      networkCell.appendChild(badge);
+    }
+
+    const vlanTd       = document.createElement('td');
+    vlanTd.className   = 'vlan-id';
+    vlanTd.textContent = row.vlanId;
+
+    const descTd       = document.createElement('td');
+    descTd.className   = 'desc-col';
+    descTd.textContent = row.description || '';
+
+    const firstTd      = document.createElement('td');
+    firstTd.className  = 'range';
+    firstTd.textContent = row.firstUsable || '';
+
+    const lastTd       = document.createElement('td');
+    lastTd.className   = 'range';
+    lastTd.textContent = row.lastUsable || '';
+
+    const hostsTd      = document.createElement('td');
+    hostsTd.textContent = (row.usableHosts != null) ? row.usableHosts.toLocaleString() : '';
+
+    tr.appendChild(vlanTd);
+    tr.appendChild(descTd);
+    tr.appendChild(networkCell);
+    tr.appendChild(firstTd);
+    tr.appendChild(lastTd);
+    tr.appendChild(hostsTd);
+    tbody.appendChild(tr);
+  }
+}
+
+function renderPagination() {
+  const pg = document.getElementById('pagination');
+  const valid = getValidRows();
+  const totalPages = Math.ceil(valid.length / PAGE_SIZE);
+
+  if (totalPages <= 1) { pg.classList.add('hidden'); return; }
+  pg.classList.remove('hidden');
+
+  const showing = Math.min((currentPage + 1) * PAGE_SIZE, valid.length);
+  const from = currentPage * PAGE_SIZE + 1;
+
+  let html = `<span>Showing ${from}–${showing} of ${valid.length}</span>`;
+  html += '<div class="page-btns">';
+  html += `<button class="page-btn" id="pg-prev" ${currentPage === 0 ? 'disabled' : ''}>‹ Prev</button>`;
+
+  const lo = Math.max(0, currentPage - 3);
+  const hi = Math.min(totalPages - 1, currentPage + 3);
+  if (lo > 0) html += `<button class="page-btn" data-page="0">1</button>${lo > 1 ? '<span style="align-self:center">…</span>' : ''}`;
+  for (let p = lo; p <= hi; p++) {
+    html += `<button class="page-btn ${p === currentPage ? 'active' : ''}" data-page="${p}">${p + 1}</button>`;
+  }
+  if (hi < totalPages - 1) html += `${hi < totalPages - 2 ? '<span style="align-self:center">…</span>' : ''}<button class="page-btn" data-page="${totalPages - 1}">${totalPages}</button>`;
+  html += `<button class="page-btn" id="pg-next" ${currentPage === totalPages - 1 ? 'disabled' : ''}>Next ›</button>`;
+  html += '</div>';
+
+  pg.innerHTML = html;
+
+  pg.querySelectorAll('[data-page]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentPage = parseInt(btn.dataset.page, 10);
+      renderTable(); renderPagination();
+    });
+  });
+  document.getElementById('pg-prev')?.addEventListener('click', () => {
+    if (currentPage > 0) { currentPage--; renderTable(); renderPagination(); }
+  });
+  document.getElementById('pg-next')?.addEventListener('click', () => {
+    if (currentPage < totalPages - 1) { currentPage++; renderTable(); renderPagination(); }
+  });
+}
+
+function renderSummary(parsed) {
+  const broadcast   = intToIp((parsed.networkInt + Math.pow(2, 32 - parsed.prefix) - 1) >>> 0);
+  const totalSpace  = Math.pow(2, 32 - parsed.prefix);
+  const validRows   = getValidRows().filter(r => !r.warning);
+  const usedIPs     = validRows.reduce((acc, r) => acc + Math.pow(2, 32 - r.prefix), 0);
+  const pct         = totalSpace > 0 ? ((usedIPs / totalSpace) * 100).toFixed(1) : '0';
+
+  const chips = [
+    { label: 'Parent Block',    value: intToIp(parsed.networkInt) + '/' + parsed.prefix },
+    { label: 'Network Mask',    value: intToIp(parsed.mask) },
+    { label: 'Broadcast',       value: broadcast },
+    { label: 'Total VLANs',     value: allocatedRows.filter(r => !r.skipped).length },
+    { label: 'Address Space',   value: totalSpace.toLocaleString() + ' IPs' },
+    { label: 'Space Allocated', value: usedIPs.toLocaleString() + ' IPs (' + pct + '%)' },
+  ];
+
+  document.getElementById('summary').innerHTML = chips.map(c => `
+    <div class="chip">
+      <div class="chip-label">${c.label}</div>
+      <div class="chip-value">${c.value}</div>
+    </div>
+  `).join('');
+}
+
+// ─── Copy CSV ────────────────────────────────────────────────
+
+function buildCsvContent() {
+  const rows = ['VLAN ID,Description,Network (CIDR),First Usable IP,Last Usable IP,Usable Hosts'];
+  getValidRows().forEach(r => {
+    rows.push([
+      r.vlanId,
+      '"' + (r.description || '').replace(/"/g, '""') + '"',
+      r.network,
+      r.firstUsable,
+      r.lastUsable,
+      r.usableHosts,
+    ].join(','));
+  });
+  return rows.join('\r\n');
+}
+
+document.getElementById('copy-btn').addEventListener('click', () => {
+  navigator.clipboard.writeText(buildCsvContent()).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => btn.textContent = '⎘ Copy CSV', 2000);
+  });
+});
+
+document.getElementById('download-btn').addEventListener('click', () => {
+  const cidrRaw = document.getElementById('cidr-input').value.trim();
+  const cidrSlug = cidrRaw
+    .replace(/\./g, '-')   // dots → dashes
+    .replace('/', '_');    // slash → underscore
+
+  const now = new Date();
+  const dd   = String(now.getDate()).padStart(2, '0');
+  const mm   = String(now.getMonth() + 1).padStart(2, '0');
+  const yy   = String(now.getFullYear()).slice(-2);
+  const hh   = String(now.getHours()).padStart(2, '0');
+  const min  = String(now.getMinutes()).padStart(2, '0');
+  const ss   = String(now.getSeconds()).padStart(2, '0');
+  const timestamp = `${dd}${mm}${yy}_${hh}${min}${ss}`;
+
+  const filename = `${cidrSlug}_${timestamp}.csv`;
+
+  const csv  = buildCsvContent();
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+
+// ─── Live CIDR validation ─────────────────────────────────────
+
+const cidrInput = document.getElementById('cidr-input');
+const valMsg    = document.getElementById('val-msg');
+
+cidrInput.addEventListener('input', () => {
+  const raw = cidrInput.value.trim();
+  if (!raw) { valMsg.className = 'validation-msg'; valMsg.textContent = ''; cidrInput.className = ''; return; }
+  const result = parseCidr(raw);
+  if (result.error) {
+    valMsg.className = 'validation-msg err';
+    valMsg.textContent = '✗ ' + result.error;
+    cidrInput.className = 'error';
+  } else {
+    valMsg.className = 'validation-msg ok';
+    valMsg.textContent = '✓ Valid CIDR — on a bit boundary.';
+    cidrInput.className = 'ok';
+  }
+});
+
+// ─── Generate ─────────────────────────────────────────────────
+
+document.getElementById('calc-btn').addEventListener('click', () => {
+  const raw = cidrInput.value.trim();
+  const parsed = parseCidr(raw);
+
+  if (parsed.error) {
+    valMsg.className = 'validation-msg err';
+    valMsg.textContent = '✗ ' + parsed.error;
+    cidrInput.className = 'error';
+    return;
+  }
+
+  if (parsedVlans.length === 0) {
+    valMsg.className = 'validation-msg warn';
+    valMsg.textContent = '⚠ No VLAN structure file loaded. Please load vlan-structure.txt first.';
+    return;
+  }
+
+  const validVlans = parsedVlans.filter(r => !r.skip);
+  if (validVlans.length === 0) {
+    valMsg.className = 'validation-msg err';
+    valMsg.textContent = '✗ File contained no valid VLAN entries.';
+    return;
+  }
+
+  allocatedRows = allocateSubnets(parsed, parsedVlans);
+  currentPage = 0;
+
+  const warnings = allocatedRows.filter(r => !r.skipped && r.warning).length;
+  if (warnings > 0) {
+    valMsg.className = 'validation-msg warn';
+    valMsg.textContent = `⚠ Generated with ${warnings} allocation warning${warnings > 1 ? 's' : ''} — check highlighted rows.`;
+  } else {
+    valMsg.className = 'validation-msg ok';
+    valMsg.textContent = `✓ Allocated ${validVlans.length} VLAN subnet${validVlans.length !== 1 ? 's' : ''} successfully.`;
+  }
+
+  renderSummary(parsed);
+  renderTable();
+  renderPagination();
+
+  document.getElementById('results').classList.remove('hidden');
+  document.getElementById('empty-state').classList.add('hidden');
+});
+
+cidrInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('calc-btn').click();
+});
+
+// ─── Utility ──────────────────────────────────────────────────
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+</script>
+</body>
+</html>
