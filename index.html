@@ -368,6 +368,20 @@
 
     <div class="validation-msg" id="val-msg"></div>
 
+    <!-- Format guide -->
+    <div style="margin-top:16px; padding:14px 16px; background:var(--bg); border:1px solid var(--border); border-radius:7px; font-size:0.83rem; color:var(--muted); line-height:1.6;">
+      <span style="color:var(--accent); font-weight:600;">vlan-structure.txt format</span>
+      &nbsp;—&nbsp; One VLAN per line, three comma-separated values:
+      <span style="color:var(--text);">vlan_id</span>,
+      <span style="color:var(--text);">description</span>,
+      <span style="color:var(--text);">prefix_length</span>.
+      Blank lines are ignored.
+      The prefix can be written as <code style="color:var(--green);">24</code>, <code style="color:var(--green)">/24</code>, or dotted-decimal <code style="color:var(--green);">255.255.255.0</code>.
+      <br>
+      <span style="color:var(--muted); opacity:0.7;">Examples:&nbsp;</span>
+      <code style="color:var(--green);">10,SERVER_VLAN,24 &nbsp;|&nbsp; 220,DEVICE_MANAGEMENT,/24 &nbsp;|&nbsp; 240,WAN_TRANSIT,255.255.255.240</code>
+    </div>
+
     <!-- File preview -->
     <div id="file-preview" class="file-preview hidden">
       <div class="file-preview-header">
