@@ -423,11 +423,6 @@
     </div>
   </div>
 
-  <div id="empty-state" class="empty-state">
-    <div class="icon">🌐</div>
-    <div>Enter a CIDR block and load your VLAN structure file to get started.</div>
-    <small>File format: vlan_id,description,prefix_length — one per line</small>
-  </div>
 
 </div>
 
@@ -911,7 +906,6 @@ document.getElementById('calc-btn').addEventListener('click', () => {
   renderPagination();
 
   document.getElementById('results').classList.remove('hidden');
-  document.getElementById('empty-state').classList.add('hidden');
 });
 
 cidrInput.addEventListener('keydown', e => {
