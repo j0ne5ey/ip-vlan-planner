@@ -710,7 +710,7 @@ function renderTable() {
 
     const descTd       = document.createElement('td');
     descTd.className   = 'desc-col';
-    descTd.textContent = row.description || '';
+    descTd.textContent = (row.description || '') + (row.network ? ' - ' + row.network : '');
 
     const firstTd      = document.createElement('td');
     firstTd.className  = 'range';
@@ -805,7 +805,7 @@ function buildCsvContent() {
   getValidRows().forEach(r => {
     rows.push([
       r.vlanId,
-      '"' + (r.description || '').replace(/"/g, '""') + '"',
+      '"' + ((r.description || '') + (r.network ? ' - ' + r.network : '')).replace(/"/g, '""') + '"',
       r.network,
       r.firstUsable,
       r.lastUsable,
