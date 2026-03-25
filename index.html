@@ -423,11 +423,6 @@
     </div>
   </div>
 
-  <div id="empty-state" class="empty-state">
-    <div class="icon">🌐</div>
-    <div>Enter a CIDR block and load your VLAN structure file to get started.</div>
-    <small>File format: vlan_id,description,prefix_length — one per line</small>
-  </div>
 
 </div>
 
@@ -551,7 +546,8 @@ function parseVlanFile(text) {
 // ─── Subnet allocation ────────────────────────────────────────
 
 function allocateSubnets(parentCidr, vlanDefs) {
-  const parentEnd = (parentCidr.networkInt + Math.pow(2, 32 - parentCidr.prefix) - 1) >>> 0;
+  const parentEnd  = (parentCidr.networkInt + Math.pow(2, 32 - parentCidr.prefix) - 1) >>> 0;
+  const thirdOctet = (parentCidr.networkInt >>> 8) & 0xff;
   let pointer = parentCidr.networkInt;
   const rows = [];
 
@@ -562,18 +558,28 @@ function allocateSubnets(parentCidr, vlanDefs) {
     }
 
     const subnetSize = Math.pow(2, 32 - def.prefix) >>> 0;
+    let netInt, broadcastInt, warning = null;
 
-    // Align pointer to subnet boundary
-    if (subnetSize > 1 && (pointer % subnetSize) !== 0) {
-      pointer = (Math.ceil(pointer / subnetSize) * subnetSize) >>> 0;
-    }
+    if (def.vlanId === 192) {
+      // Special case: pin to 192.168.<third-octet-of-parent>.0
+      netInt       = ipToInt('192.168.' + thirdOctet + '.0');
+      broadcastInt = (netInt + subnetSize - 1) >>> 0;
+      // pointer does not advance — this allocation is outside the parent block
+    } else {
+      // Normal sequential allocation
+      // Align pointer to subnet boundary
+      if (subnetSize > 1 && (pointer % subnetSize) !== 0) {
+        pointer = (Math.ceil(pointer / subnetSize) * subnetSize) >>> 0;
+      }
 
-    const netInt       = pointer >>> 0;
-    const broadcastInt = (netInt + subnetSize - 1) >>> 0;
+      netInt       = pointer >>> 0;
+      broadcastInt = (netInt + subnetSize - 1) >>> 0;
 
-    let warning = null;
-    if (broadcastInt > parentEnd) {
-      warning = 'Exceeds parent block';
+      if (broadcastInt > parentEnd) {
+        warning = 'Exceeds parent block';
+      }
+
+      pointer = (broadcastInt + 1) >>> 0;
     }
 
     let firstUsable, lastUsable, usableHosts;
@@ -595,8 +601,6 @@ function allocateSubnets(parentCidr, vlanDefs) {
       usableHosts,
       warning,
     });
-
-    pointer = (broadcastInt + 1) >>> 0;
   }
 
   return rows;
@@ -706,7 +710,7 @@ function renderTable() {
 
     const descTd       = document.createElement('td');
     descTd.className   = 'desc-col';
-    descTd.textContent = row.description || '';
+    descTd.textContent = (row.description || '') + (row.network ? '-' + row.network : '');
 
     const firstTd      = document.createElement('td');
     firstTd.className  = 'range';
@@ -801,7 +805,7 @@ function buildCsvContent() {
   getValidRows().forEach(r => {
     rows.push([
       r.vlanId,
-      '"' + (r.description || '').replace(/"/g, '""') + '"',
+      '"' + ((r.description || '') + (r.network ? ' - ' + r.network : '')).replace(/"/g, '""') + '"',
       r.network,
       r.firstUsable,
       r.lastUsable,
@@ -911,7 +915,6 @@ document.getElementById('calc-btn').addEventListener('click', () => {
   renderPagination();
 
   document.getElementById('results').classList.remove('hidden');
-  document.getElementById('empty-state').classList.add('hidden');
 });
 
 cidrInput.addEventListener('keydown', e => {
