@@ -710,7 +710,7 @@ function renderTable() {
 
     const descTd       = document.createElement('td');
     descTd.className   = 'desc-col';
-    descTd.textContent = (row.description || '') + (row.network ? ' - ' + row.network : '');
+    descTd.textContent = (row.description || '') + (row.network ? '-' + row.network : '');
 
     const firstTd      = document.createElement('td');
     firstTd.className  = 'range';
