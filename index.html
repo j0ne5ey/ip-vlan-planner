@@ -467,12 +467,8 @@ function parseMask(raw) {
   // dotted decimal like 255.255.255.0
   const dotted = ipToInt(s);
   if (dotted !== null) {
-    // Count leading 1s
-    let prefix = 0;
-    for (let i = 31; i >= 0; i--) {
-      if (dotted & (1 << i)) prefix++;
-      else break;
-    }
+    // Count leading 1s via clz32 on the bitwise complement
+    const prefix = Math.clz32(~dotted >>> 0);
     // Validate it's a valid mask (all 1s then all 0s)
     const expected = maskFromPrefix(prefix);
     if (expected === dotted) return prefix;
@@ -546,7 +542,7 @@ function parseVlanFile(text) {
 // ─── Subnet allocation ────────────────────────────────────────
 
 function allocateSubnets(parentCidr, vlanDefs) {
-  const parentEnd  = (parentCidr.networkInt + Math.pow(2, 32 - parentCidr.prefix) - 1) >>> 0;
+  const parentEnd  = (parentCidr.networkInt + (2 ** (32 - parentCidr.prefix)) - 1) >>> 0;
   const thirdOctet = (parentCidr.networkInt >>> 8) & 0xff;
   let pointer = parentCidr.networkInt;
   const rows = [];
@@ -557,7 +553,7 @@ function allocateSubnets(parentCidr, vlanDefs) {
       continue;
     }
 
-    const subnetSize = Math.pow(2, 32 - def.prefix) >>> 0;
+    const subnetSize = 2 ** (32 - def.prefix);
     let netInt, broadcastInt, warning = null;
 
     if (def.vlanId === 192) {
@@ -646,8 +642,8 @@ function loadFile(file) {
 }
 
 function renderFilePreview(filename) {
-  const valid   = parsedVlans.filter(r => !r.skip);
-  const skipped = parsedVlans.filter(r => r.skip);
+  const skippedCount = parsedVlans.reduce((n, r) => n + (r.skip ? 1 : 0), 0);
+  const validCount   = parsedVlans.length - skippedCount;
 
   dzLabel.textContent = filename;
   dropZone.classList.add('loaded');
@@ -655,7 +651,7 @@ function renderFilePreview(filename) {
 
   document.getElementById('preview-title').textContent = `${filename} — parsed`;
   document.getElementById('preview-count').textContent =
-    `${valid.length} valid · ${skipped.length} skipped`;
+    `${validCount} valid · ${skippedCount} skipped`;
 
   const body = document.getElementById('preview-body');
   body.innerHTML = '';
@@ -665,10 +661,10 @@ function renderFilePreview(filename) {
     div.className = 'file-row ' + (row.skip ? 'row-skip' : row.warning ? 'row-warn' : 'row-ok');
     div.innerHTML = `
       <span class="fr-num">${row.lineNum}</span>
-      <span class="fr-vlan">${row.vlanId ?? '—'}</span>
-      <span class="fr-desc">${row.description ?? row.raw}</span>
+      <span class="fr-vlan">${escHtml(String(row.vlanId ?? '—'))}</span>
+      <span class="fr-desc">${escHtml(String(row.description ?? row.raw))}</span>
       <span class="fr-mask">${row.prefix != null ? '/' + row.prefix : '?'}</span>
-      ${row.warning ? `<span class="fr-badge">${row.warning}</span>` : ''}
+      ${row.warning ? `<span class="fr-badge">${escHtml(row.warning)}</span>` : ''}
     `;
     body.appendChild(div);
   });
@@ -775,17 +771,17 @@ function renderPagination() {
 }
 
 function renderSummary(parsed) {
-  const broadcast   = intToIp((parsed.networkInt + Math.pow(2, 32 - parsed.prefix) - 1) >>> 0);
-  const totalSpace  = Math.pow(2, 32 - parsed.prefix);
+  const totalSpace  = 2 ** (32 - parsed.prefix);
+  const broadcast   = intToIp((parsed.networkInt + totalSpace - 1) >>> 0);
   const validRows   = getValidRows().filter(r => !r.warning);
-  const usedIPs     = validRows.reduce((acc, r) => acc + Math.pow(2, 32 - r.prefix), 0);
+  const usedIPs     = validRows.reduce((acc, r) => acc + (2 ** (32 - r.prefix)), 0);
   const pct         = totalSpace > 0 ? ((usedIPs / totalSpace) * 100).toFixed(1) : '0';
 
   const chips = [
     { label: 'Parent Block',    value: intToIp(parsed.networkInt) + '/' + parsed.prefix },
     { label: 'Network Mask',    value: intToIp(parsed.mask) },
     { label: 'Broadcast',       value: broadcast },
-    { label: 'Total VLANs',     value: allocatedRows.filter(r => !r.skipped).length },
+    { label: 'Total VLANs',     value: getValidRows().length },
     { label: 'Address Space',   value: totalSpace.toLocaleString() + ' IPs' },
     { label: 'Space Allocated', value: usedIPs.toLocaleString() + ' IPs (' + pct + '%)' },
   ];
@@ -815,16 +811,16 @@ function buildCsvContent() {
   return rows.join('\r\n');
 }
 
-document.getElementById('copy-btn').addEventListener('click', () => {
+const copyBtn = document.getElementById('copy-btn');
+copyBtn.addEventListener('click', () => {
   navigator.clipboard.writeText(buildCsvContent()).then(() => {
-    const btn = document.getElementById('copy-btn');
-    btn.textContent = '✓ Copied!';
-    setTimeout(() => btn.textContent = '⎘ Copy CSV', 2000);
+    copyBtn.textContent = '✓ Copied!';
+    setTimeout(() => copyBtn.textContent = '⎘ Copy CSV', 2000);
   });
 });
 
 document.getElementById('download-btn').addEventListener('click', () => {
-  const cidrRaw = document.getElementById('cidr-input').value.trim();
+  const cidrRaw = cidrInput.value.trim();
   const cidrSlug = cidrRaw
     .replace(/\./g, '-')   // dots → dashes
     .replace('/', '_');    // slash → underscore
