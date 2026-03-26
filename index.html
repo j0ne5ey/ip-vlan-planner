@@ -179,7 +179,8 @@
     .file-row:first-child { border-top: none; }
     .file-row.row-ok    { }
     .file-row.row-warn  { background: rgba(251,191,36,0.06); }
-    .file-row.row-skip  { opacity: 0.4; }
+    .file-row.row-skip    { opacity: 0.4; }
+    .file-row.row-reserve { opacity: 0.55; font-style: italic; }
 
     .fr-num  { color: var(--muted); min-width: 28px; }
     .fr-vlan { color: var(--accent); min-width: 50px; }
@@ -525,6 +526,7 @@ function parseVlanFile(text) {
 
     // Description
     const description = parts[1] || '(no description)';
+    const reserve = description.trim().toLowerCase() === 'reserve';
 
     // Mask / prefix
     const prefix = parseMask(parts[2]);
@@ -533,7 +535,7 @@ function parseVlanFile(text) {
       return;
     }
 
-    result.push({ lineNum, vlanId, description, prefix, raw });
+    result.push({ lineNum, vlanId, description, prefix, raw, reserve });
   });
 
   return result;
@@ -596,6 +598,7 @@ function allocateSubnets(parentCidr, vlanDefs) {
       lastUsable,
       usableHosts,
       warning,
+      reserved: def.reserve || false,
     });
   }
 
@@ -658,13 +661,14 @@ function renderFilePreview(filename) {
 
   parsedVlans.forEach(row => {
     const div = document.createElement('div');
-    div.className = 'file-row ' + (row.skip ? 'row-skip' : row.warning ? 'row-warn' : 'row-ok');
+    div.className = 'file-row ' + (row.skip ? 'row-skip' : row.reserve ? 'row-reserve' : row.warning ? 'row-warn' : 'row-ok');
     div.innerHTML = `
       <span class="fr-num">${row.lineNum}</span>
       <span class="fr-vlan">${escHtml(String(row.vlanId ?? '—'))}</span>
       <span class="fr-desc">${escHtml(String(row.description ?? row.raw))}</span>
       <span class="fr-mask">${row.prefix != null ? '/' + row.prefix : '?'}</span>
-      ${row.warning ? `<span class="fr-badge">${escHtml(row.warning)}</span>` : ''}
+      ${row.warning   ? `<span class="fr-badge">${escHtml(row.warning)}</span>` : ''}
+      ${row.reserve   ? `<span class="fr-badge">reserved</span>` : ''}
     `;
     body.appendChild(div);
   });
@@ -675,7 +679,7 @@ function renderFilePreview(filename) {
 // ─── Table rendering ─────────────────────────────────────────
 
 function getValidRows() {
-  return allocatedRows.filter(r => !r.skipped);
+  return allocatedRows.filter(r => !r.skipped && !r.reserved);
 }
 
 function renderTable() {
@@ -773,8 +777,10 @@ function renderPagination() {
 function renderSummary(parsed) {
   const totalSpace  = 2 ** (32 - parsed.prefix);
   const broadcast   = intToIp((parsed.networkInt + totalSpace - 1) >>> 0);
-  const validRows   = getValidRows().filter(r => !r.warning);
-  const usedIPs     = validRows.reduce((acc, r) => acc + (2 ** (32 - r.prefix)), 0);
+  // Include reserved subnets in space calculation — address space is consumed even though
+  // reserved rows are excluded from the visible output.
+  const allocatedRows_ = allocatedRows.filter(r => !r.skipped && !r.warning);
+  const usedIPs        = allocatedRows_.reduce((acc, r) => acc + (2 ** (32 - r.prefix)), 0);
   const pct         = totalSpace > 0 ? ((usedIPs / totalSpace) * 100).toFixed(1) : '0';
 
   const chips = [
