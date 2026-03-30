@@ -378,9 +378,10 @@
       <span style="color:var(--text);">prefix_length</span>.
       Blank lines are ignored.
       The prefix can be written as <code style="color:var(--green);">24</code>, <code style="color:var(--green)">/24</code>, or dotted-decimal <code style="color:var(--green);">255.255.255.0</code>.
+      To silently reserve a subnet without showing it in the output, set the description to <code style="color:var(--yellow);">RESERVED</code> — the address space will still be consumed.
       <br>
       <span style="color:var(--muted); opacity:0.7;">Examples:&nbsp;</span>
-      <code style="color:var(--green);">10,SERVER_VLAN,24 &nbsp;|&nbsp; 220,DEVICE_MANAGEMENT,/24 &nbsp;|&nbsp; 240,WAN_TRANSIT,255.255.255.240</code>
+      <code style="color:var(--green);">10,SERVER_VLAN,24 &nbsp;|&nbsp; 220,DEVICE_MANAGEMENT,/24 &nbsp;|&nbsp; 240,WAN_TRANSIT,255.255.255.240 &nbsp;|&nbsp; 300,RESERVED,24</code>
     </div>
 
     <!-- File preview -->
