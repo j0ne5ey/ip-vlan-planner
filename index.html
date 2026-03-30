@@ -599,7 +599,7 @@ function allocateSubnets(parentCidr, vlanDefs) {
       lastUsable,
       usableHosts,
       warning,
-      reserved: def.reserved || false,
+      reserved: def.reserved,
     });
   }
 
@@ -618,6 +618,8 @@ const PAGE_SIZE  = 100;
 const dropZone  = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const dzLabel   = document.getElementById('dz-label');
+const cidrInput = document.getElementById('cidr-input');
+const valMsg    = document.getElementById('val-msg');
 
 dropZone.addEventListener('click', () => fileInput.click());
 dropZone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
@@ -636,7 +638,16 @@ fileInput.addEventListener('change', () => {
 });
 
 function loadFile(file) {
+  if (file.size > 1024 * 1024) {
+    valMsg.className = 'validation-msg err';
+    valMsg.textContent = '✗ File too large — maximum size is 1 MB.';
+    return;
+  }
   const reader = new FileReader();
+  reader.onerror = () => {
+    valMsg.className = 'validation-msg err';
+    valMsg.textContent = '✗ Could not read file.';
+  };
   reader.onload = e => {
     const text = e.target.result;
     parsedVlans = parseVlanFile(text);
@@ -767,10 +778,10 @@ function renderPagination() {
       renderTable(); renderPagination();
     });
   });
-  document.getElementById('pg-prev')?.addEventListener('click', () => {
+  pg.querySelector('#pg-prev')?.addEventListener('click', () => {
     if (currentPage > 0) { currentPage--; renderTable(); renderPagination(); }
   });
-  document.getElementById('pg-next')?.addEventListener('click', () => {
+  pg.querySelector('#pg-next')?.addEventListener('click', () => {
     if (currentPage < totalPages - 1) { currentPage++; renderTable(); renderPagination(); }
   });
 }
@@ -795,8 +806,8 @@ function renderSummary(parsed) {
 
   document.getElementById('summary').innerHTML = chips.map(c => `
     <div class="chip">
-      <div class="chip-label">${c.label}</div>
-      <div class="chip-value">${c.value}</div>
+      <div class="chip-label">${escHtml(c.label)}</div>
+      <div class="chip-value">${escHtml(String(c.value))}</div>
     </div>
   `).join('');
 }
@@ -823,6 +834,9 @@ copyBtn.addEventListener('click', () => {
   navigator.clipboard.writeText(buildCsvContent()).then(() => {
     copyBtn.textContent = '✓ Copied!';
     setTimeout(() => copyBtn.textContent = '⎘ Copy CSV', 2000);
+  }).catch(() => {
+    copyBtn.textContent = '✗ Copy failed';
+    setTimeout(() => copyBtn.textContent = '⎘ Copy CSV', 2000);
   });
 });
 
@@ -833,13 +847,8 @@ document.getElementById('download-btn').addEventListener('click', () => {
     .replace('/', '_');    // slash → underscore
 
   const now = new Date();
-  const dd   = String(now.getDate()).padStart(2, '0');
-  const mm   = String(now.getMonth() + 1).padStart(2, '0');
-  const yy   = String(now.getFullYear()).slice(-2);
-  const hh   = String(now.getHours()).padStart(2, '0');
-  const min  = String(now.getMinutes()).padStart(2, '0');
-  const ss   = String(now.getSeconds()).padStart(2, '0');
-  const timestamp = `${dd}${mm}${yy}_${hh}${min}${ss}`;
+  const pad = n => String(n).padStart(2, '0');
+  const timestamp = `${pad(now.getDate())}${pad(now.getMonth()+1)}${String(now.getFullYear()).slice(-2)}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 
   const filename = `${cidrSlug}_${timestamp}.csv`;
 
@@ -856,9 +865,6 @@ document.getElementById('download-btn').addEventListener('click', () => {
 });
 
 // ─── Live CIDR validation ─────────────────────────────────────
-
-const cidrInput = document.getElementById('cidr-input');
-const valMsg    = document.getElementById('val-msg');
 
 cidrInput.addEventListener('input', () => {
   const raw = cidrInput.value.trim();
@@ -894,8 +900,8 @@ document.getElementById('calc-btn').addEventListener('click', () => {
     return;
   }
 
-  const validVlans = parsedVlans.filter(r => !r.skip);
-  if (validVlans.length === 0) {
+  const validCount = parsedVlans.filter(r => !r.skip).length;
+  if (validCount === 0) {
     valMsg.className = 'validation-msg err';
     valMsg.textContent = '✗ File contained no valid VLAN entries.';
     return;
@@ -910,7 +916,7 @@ document.getElementById('calc-btn').addEventListener('click', () => {
     valMsg.textContent = `⚠ Generated with ${warnings} allocation warning${warnings > 1 ? 's' : ''} — check highlighted rows.`;
   } else {
     valMsg.className = 'validation-msg ok';
-    valMsg.textContent = `✓ Allocated ${validVlans.length} VLAN subnet${validVlans.length !== 1 ? 's' : ''} successfully.`;
+    valMsg.textContent = `✓ Allocated ${validCount} VLAN subnet${validCount !== 1 ? 's' : ''} successfully.`;
   }
 
   renderSummary(parsed);
