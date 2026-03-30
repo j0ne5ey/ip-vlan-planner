@@ -378,7 +378,7 @@
       <span style="color:var(--text);">prefix_length</span>.
       Blank lines are ignored.
       The prefix can be written as <code style="color:var(--green);">24</code>, <code style="color:var(--green)">/24</code>, or dotted-decimal <code style="color:var(--green);">255.255.255.0</code>.
-      To silently reserve a subnet without showing it in the output, set the description to <code style="color:var(--yellow);">RESERVE</code> or <code style="color:var(--yellow);">RESERVED</code> (case-insensitive) — the address space will still be consumed.
+      To silently reserve a subnet without showing it in the output, set the description to <code style="color:var(--yellow);">RESERVED</code> — the address space will still be consumed.
       <br>
       <span style="color:var(--muted); opacity:0.7;">Examples:&nbsp;</span>
       <code style="color:var(--green);">10,SERVER_VLAN,24 &nbsp;|&nbsp; 220,DEVICE_MANAGEMENT,/24 &nbsp;|&nbsp; 240,WAN_TRANSIT,255.255.255.240 &nbsp;|&nbsp; 300,RESERVED,24</code>
@@ -527,8 +527,7 @@ function parseVlanFile(text) {
 
     // Description
     const description = parts[1] || '(no description)';
-    const reserveKey = description.trim().toLowerCase();
-    const reserve = reserveKey === 'reserve' || reserveKey === 'reserved';
+    const reserved = description.trim() === 'RESERVED';
 
     // Mask / prefix
     const prefix = parseMask(parts[2]);
@@ -537,7 +536,7 @@ function parseVlanFile(text) {
       return;
     }
 
-    result.push({ lineNum, vlanId, description, prefix, raw, reserve });
+    result.push({ lineNum, vlanId, description, prefix, raw, reserved });
   });
 
   return result;
@@ -600,7 +599,7 @@ function allocateSubnets(parentCidr, vlanDefs) {
       lastUsable,
       usableHosts,
       warning,
-      reserved: def.reserve || false,
+      reserved: def.reserved || false,
     });
   }
 
@@ -663,14 +662,14 @@ function renderFilePreview(filename) {
 
   parsedVlans.forEach(row => {
     const div = document.createElement('div');
-    div.className = 'file-row ' + (row.skip ? 'row-skip' : row.reserve ? 'row-reserve' : row.warning ? 'row-warn' : 'row-ok');
+    div.className = 'file-row ' + (row.skip ? 'row-skip' : row.reserved ? 'row-reserve' : row.warning ? 'row-warn' : 'row-ok');
     div.innerHTML = `
       <span class="fr-num">${row.lineNum}</span>
       <span class="fr-vlan">${escHtml(String(row.vlanId ?? '—'))}</span>
       <span class="fr-desc">${escHtml(String(row.description ?? row.raw))}</span>
       <span class="fr-mask">${row.prefix != null ? '/' + row.prefix : '?'}</span>
       ${row.warning   ? `<span class="fr-badge">${escHtml(row.warning)}</span>` : ''}
-      ${row.reserve   ? `<span class="fr-badge">reserved</span>` : ''}
+      ${row.reserved  ? `<span class="fr-badge">reserved</span>` : ''}
     `;
     body.appendChild(div);
   });
